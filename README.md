@@ -1,7 +1,34 @@
-# Chandra Agency ERP — Billing System (V9.6 Fixed)
+# Chandra Agency ERP — Billing System (V9.7 — No Login, Unlimited Local Storage)
 
 Single-file billing/ERP app jo ab **Railway aur Vercel dono pe deploy** ho jaata hai,
-aur **storage-full crash** se bhi fix ho gaya hai.
+**storage-full crash** se fix hai, aur **koi login / device activation / license key nahi**
+maangta — app seedha khulti hai.
+
+## 🔓 V9.7 — Security / Login / Device Code poori tarah hata diya gaya
+- Purana **"SOFTWARE ACTIVATION REQUIRED"** screen (Device ID + License Key, jo alag device
+  pe generate hota tha) **completely remove** kar diya gaya — dono `index.html` aur
+  `Chandra_bill - Copy.html` se.
+- Koi password/PIN/key nahi, koi device lock nahi — **app khulte hi seedha dashboard**.
+- Purani saved license/device keys startup pe automatically delete ho jaati hain.
+- Saara data pehle ki tarah **100% local** (aapke browser ke andar) hi rehta hai — server pe
+  kuch nahi jaata.
+
+### 🐛 Bug fix (V9.7)
+- **Multi-line / range paste crash fix**: grid mein ek saath kai numbers (jaise
+  `41950-41960` waali ranges) paste karne par ek JavaScript error (`firstLine.join is not a
+  function`) aata tha — ab fix hai, paste theek se kaam karta hai.
+
+### 💾 Storage ki limit — seedha jawaab
+- App **IndexedDB** use karti hai — **localStorage jaisi 5–10MB ki limit NAHI hai**.
+  IndexedDB mein browser aapko **sainkdo MB / kai GB** tak data deta hai (practically aapki
+  hard disk jitni free ho). 50MB, 100MB ya GB bharne par app **band/block nahi hoti**.
+- Ab startup pe **Persistent Storage** ki permission bhi maangi jaati hai — isse browser
+  is data ko kabhi automatically delete nahi karta. (Tools → **STORAGE STATUS** mein engine
+  aur quota live dikhta hai.)
+- Sirf ek haalat mein 5–10MB fallback lagta hai: agar browser IndexedDB support na kare
+  (bahut purana browser / kuch private modes). Aam modern Chrome/Edge/Firefox/Safari mein
+  IndexedDB + unlimited-level storage chalta hai.
+
 
 ## 🔴 Purani problems (jo fix ho gayi)
 
@@ -65,7 +92,6 @@ localStorage fallback mode mein).
 2. **WhatsApp share button** — bill/report seedha party ko WhatsApp pe bhejo.
 3. **Print/PDF bill** — browser print se proper invoice layout.
 4. **CSV/Excel export** — reports ko Excel mein kholne ke liye.
-5. **PIN/password lock** — galat haath se data bachane ke liye screen lock.
-6. **Cloud sync (Firebase/Supabase)** — do alag device pe same data (abhi data sirf ek browser mein rehta hai).
+5. **Cloud sync (Firebase/Supabase)** — do alag device pe same data (abhi data sirf ek browser mein rehta hai).
 7. **Monthly dashboard/chart** — kitna sale hua, kitna return, party-wise graph.
 8. **Purana data auto-archive** — 6 mahine+ purana data alag file mein — app fast rahega.

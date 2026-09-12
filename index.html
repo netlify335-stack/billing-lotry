@@ -113,40 +113,13 @@
         .btn-del-file { background: var(--danger); }
 
         #systemLoader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a2a6c; color: white; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; transition: opacity 0.3s; letter-spacing: 1px; text-transform: uppercase;}
-        
-        /* --- LICENSE SCREEN --- */
-        #licenseScreen {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: #0f1c42; z-index: 100000; justify-content: center; align-items: center; 
-            flex-direction: column; color: white; text-align: center;
-        }
-        .license-box { background: rgba(255,255,255,0.1); padding: 40px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(10px); }
     </style>
 </head>
 <body>
 
-<div id="licenseScreen">
-    <div class="license-box">
-        <h2 style="color:var(--accent); margin-top:0; letter-spacing:1px;">SOFTWARE ACTIVATION REQUIRED</h2>
-        <p style="margin-bottom:5px;">This device is not registered to use this ERP.</p>
-        <p style="margin-top:0; font-size:14px; color:#aaa;">Please provide the Device ID below to your Administrator.</p>
-        
-        <div style="background:rgba(0,0,0,0.3); padding:15px; border-radius:4px; margin:20px 0;">
-            <span style="font-size:12px; text-transform:uppercase; color:#888;">YOUR DEVICE ID</span><br>
-            <strong id="deviceIdDisplay" style="color:var(--warning); font-size:32px; letter-spacing:3px;"></strong>
-        </div>
-
-        <input type="password" id="licenseInput" placeholder="ENTER LICENSE KEY" style="padding:12px; width:250px; text-align:center; font-weight:bold; font-size:16px; border-radius:4px; border:none; margin-bottom:15px; outline:none; background:#fff; color:#000;">
-        <br>
-        <button onclick="checkLicense()" style="padding:12px 30px; font-weight:bold; cursor:pointer; background:var(--accent); color:white; border:none; border-radius:4px; font-size:14px; text-transform:uppercase; letter-spacing:1px;">ACTIVATE DEVICE</button>
-        
-        <p style="font-size:10px; color:#555; margin-top:30px;">Licensed to: Prop. Amit Chandra</p>
-    </div>
-</div>
-
 <div id="systemLoader">
     <div>SYSTEM INITIALIZING...</div>
-    <div style="font-size:12px; margin-top:10px; font-weight:normal;">LOADING V9.6 SECURED ERP (UNLIMITED STORAGE)...</div>
+    <div style="font-size:12px; margin-top:10px; font-weight:normal;">LOADING CHANDRA ERP (UNLIMITED LOCAL STORAGE)...</div>
 </div>
 
 <div class="sticky-header-container">
@@ -348,11 +321,10 @@
 
 <script>
 // =========================================================================
-// SYSTEM CORE: SECURITY, VARIABLES & DYNAMIC SEMs
+// SYSTEM CORE: VARIABLES & DYNAMIC SEMs
+// (Device activation / license / login security poori tarah hata di gayi hai —
+//  app seedha bina kisi code/key ke khulti hai.)
 // =========================================================================
-
-const SECRET_MULTIPLIER = 8493; 
-const SECRET_ADDITION = 29471;
 
 // =========================================================================
 // STORE ENGINE (V9.6 FIX): IndexedDB-backed storage with huge quota.
@@ -373,6 +345,30 @@ const Store = (function() {
     let mode = 'init';            // 'idb' | 'ls' | 'init'
     let warned = false;
     let failCount = 0;
+    let persisted = false;        // navigator.storage.persist grant status
+
+    // Persistent storage maangte hain — isse browser data ko automatically
+    // delete nahi karta aur quota practical roop se disk-jitna (GBs) milta hai.
+    // Kuch browsers mein user gesture chahiye hota hai, isliye pehli click/key
+    // par dobara try karte hain.
+    async function requestPersistence() {
+        try {
+            if (typeof navigator === 'undefined' || !navigator.storage || !navigator.storage.persist) return;
+            if (navigator.storage.persisted && await navigator.storage.persisted()) { persisted = true; return; }
+            persisted = !!(await navigator.storage.persist());
+            if (!persisted) {
+                let retry = async () => {
+                    try { persisted = !!(await navigator.storage.persist()); } catch(e) {}
+                    if (persisted) {
+                        document.removeEventListener('click', retry);
+                        document.removeEventListener('keydown', retry);
+                    }
+                };
+                document.addEventListener('click', retry, { once: false });
+                document.addEventListener('keydown', retry, { once: false });
+            }
+        } catch(e) { /* persistence optional hai */ }
+    }
 
     function openDB() {
         return new Promise((resolve, reject) => {
@@ -474,6 +470,7 @@ const Store = (function() {
             rows.forEach(([k, v]) => mem.set(k, v));
             mode = 'idb';
             migrateLegacy();
+            requestPersistence();
         } catch(e) {
             mode = 'ls';
             try {
@@ -490,9 +487,10 @@ const Store = (function() {
         init: init,
         flush: flush,
         get mode() { return mode; },
+        get persisted() { return persisted; },
         get(key) { return mem.has(key) ? mem.get(key) : null; },
         set(key, val) {
-            let s = (val === null || val === undefined) ? String(val) : String(val);
+            let s = String(val);
             mem.set(key, s);
             if (mode === 'idb') { pending.set(key, s); scheduleFlush(); }
             else { try { localStorage.setItem(key, s); } catch(e) { warnOnce(); } }
@@ -522,42 +520,6 @@ window.addEventListener('visibilitychange', () => { if (document.visibilityState
 
 function safeLSGet(key) { try { return Store.get(key); } catch(e) { return null; } }
 function safeLSSet(key, val) { try { Store.set(key, val); } catch(e) {} }
-
-function initLicense() {
-    let savedKey = Store.get('erp_license_key');
-    let deviceId = Store.get('erp_device_id');
-
-    if (!deviceId) {
-        deviceId = Math.floor(10000 + Math.random() * 90000).toString();
-        Store.set('erp_device_id', deviceId);
-    }
-
-    let expectedKey = (parseInt(deviceId) * SECRET_MULTIPLIER) + SECRET_ADDITION;
-
-    if (savedKey && parseInt(savedKey) === expectedKey) {
-        document.getElementById('licenseScreen').style.display = 'none';
-        document.body.style.overflow = 'auto';
-    } else {
-        document.getElementById('licenseScreen').style.display = 'flex';
-        document.getElementById('deviceIdDisplay').innerText = deviceId;
-        document.body.style.overflow = 'hidden';
-    }
-}
-
-function checkLicense() {
-    let input = document.getElementById('licenseInput').value.trim();
-    let deviceId = Store.get('erp_device_id');
-    let expectedKey = (parseInt(deviceId) * SECRET_MULTIPLIER) + SECRET_ADDITION;
-
-    if (parseInt(input) === expectedKey) {
-        Store.set('erp_license_key', input);
-        alert("ACTIVATION SUCCESSFUL! WELCOME.");
-        document.getElementById('licenseScreen').style.display = 'none';
-        document.body.style.overflow = 'auto';
-    } else {
-        alert("❌ INVALID LICENSE KEY! Contact Admin.");
-    }
-}
 
 let sems = [3, 5, 10, 15, 20];
 const ranks = [1, 2, 3, 4, 5]; 
@@ -953,7 +915,10 @@ function init() {
 
 document.addEventListener('DOMContentLoaded', async () => {
     await Store.init();        // storage engine ready karo (IndexedDB + legacy migration)
-    initLicense();             // license screen decide karo
+    // Purani license/device activation ke leftovers (agar koi ho) saaf kar do —
+    // ab koi login/activation nahi hai.
+    try { Store.remove('erp_license_key'); Store.remove('erp_device_id'); } catch(e) {}
+    document.body.style.overflow = 'auto';
     loadStorageVars();         // baaki data load
     init();
 });
@@ -1333,7 +1298,7 @@ function handleGridPaste(evt, type, i) {
         }
 
         let firstLine = validLines.shift(); let fParts = firstLine.split('-');
-        gridData[type][i] = { sem: currentSem, pfx: currentPfx, from: fParts[0]||'', to: fParts[1]||'', qty: parse(firstLine.join('-')).length };
+        gridData[type][i] = { sem: currentSem, pfx: currentPfx, from: fParts[0]||'', to: fParts[1]||'', qty: parse(firstLine).length };
         let insertIdx = i + 1;
         validLines.forEach(line => {
             let parts = line.split('-');
@@ -2616,9 +2581,14 @@ function renderStorageStatus(c) {
     let gridKeys = keys.filter(k => /^erp_.+?_\d{4}-\d{2}-\d{2}_/.test(k)).length;
     let histRaw = safeLSGet(lKey('history')) || "";
     let histKB = (histRaw.length * 2) / 1024;
-    let engineBadge = Store.mode === 'idb'
-        ? '<span style="background:var(--accent); color:white; padding:4px 12px; border-radius:20px; font-size:12px;">INDEXEDDB ✓ UNLIMITED-LEVEL STORAGE</span>'
-        : '<span style="background:var(--danger); color:white; padding:4px 12px; border-radius:20px; font-size:12px;">LOCALSTORAGE FALLBACK (10MB LIMIT!)</span>';
+    let engineBadge;
+    if (Store.mode === 'idb' && Store.persisted) {
+        engineBadge = '<span style="background:var(--accent); color:white; padding:4px 12px; border-radius:20px; font-size:12px;">INDEXEDDB ✓ UNLIMITED PERMANENT STORAGE (GBs — AUTO-DELETE OFF)</span>';
+    } else if (Store.mode === 'idb') {
+        engineBadge = '<span style="background:var(--accent); color:white; padding:4px 12px; border-radius:20px; font-size:12px;">INDEXEDDB ✓ UNLIMITED-LEVEL STORAGE (100s OF MB / GBs)</span>';
+    } else {
+        engineBadge = '<span style="background:var(--danger); color:white; padding:4px 12px; border-radius:20px; font-size:12px;">LOCALSTORAGE FALLBACK (10MB LIMIT!)</span>';
+    }
 
     c.innerHTML = `
     <h3>STORAGE STATUS & CLEANUP</h3>
