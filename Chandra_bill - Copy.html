@@ -113,40 +113,13 @@
         .btn-del-file { background: var(--danger); }
 
         #systemLoader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a2a6c; color: white; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; transition: opacity 0.3s; letter-spacing: 1px; text-transform: uppercase;}
-        
-        /* --- LICENSE SCREEN --- */
-        #licenseScreen {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: #0f1c42; z-index: 100000; justify-content: center; align-items: center; 
-            flex-direction: column; color: white; text-align: center;
-        }
-        .license-box { background: rgba(255,255,255,0.1); padding: 40px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(10px); }
     </style>
 </head>
 <body>
 
-<div id="licenseScreen">
-    <div class="license-box">
-        <h2 style="color:var(--accent); margin-top:0; letter-spacing:1px;">SOFTWARE ACTIVATION REQUIRED</h2>
-        <p style="margin-bottom:5px;">This device is not registered to use this ERP.</p>
-        <p style="margin-top:0; font-size:14px; color:#aaa;">Please provide the Device ID below to your Administrator.</p>
-        
-        <div style="background:rgba(0,0,0,0.3); padding:15px; border-radius:4px; margin:20px 0;">
-            <span style="font-size:12px; text-transform:uppercase; color:#888;">YOUR DEVICE ID</span><br>
-            <strong id="deviceIdDisplay" style="color:var(--warning); font-size:32px; letter-spacing:3px;"></strong>
-        </div>
-
-        <input type="password" id="licenseInput" placeholder="ENTER LICENSE KEY" style="padding:12px; width:250px; text-align:center; font-weight:bold; font-size:16px; border-radius:4px; border:none; margin-bottom:15px; outline:none; background:#fff; color:#000;">
-        <br>
-        <button onclick="checkLicense()" style="padding:12px 30px; font-weight:bold; cursor:pointer; background:var(--accent); color:white; border:none; border-radius:4px; font-size:14px; text-transform:uppercase; letter-spacing:1px;">ACTIVATE DEVICE</button>
-        
-        <p style="font-size:10px; color:#555; margin-top:30px;">Licensed to: Prop. Amit Chandra</p>
-    </div>
-</div>
-
 <div id="systemLoader">
     <div>SYSTEM INITIALIZING...</div>
-    <div style="font-size:12px; margin-top:10px; font-weight:normal;">LOADING V9.5 SECURED ERP...</div>
+    <div style="font-size:12px; margin-top:10px; font-weight:normal;">LOADING CHANDRA ERP...</div>
 </div>
 
 <div class="sticky-header-container">
@@ -347,49 +320,12 @@
 
 <script>
 // =========================================================================
-// SYSTEM CORE: SECURITY, VARIABLES & DYNAMIC SEMs
+// SYSTEM CORE: VARIABLES & DYNAMIC SEMs
+// (Device activation / license / login security poori tarah hata di gayi hai.)
 // =========================================================================
 
-const SECRET_MULTIPLIER = 8493; 
-const SECRET_ADDITION = 29471;
-
-function initLicense() {
-    let savedKey = localStorage.getItem('erp_license_key');
-    let deviceId = localStorage.getItem('erp_device_id');
-
-    if (!deviceId) {
-        deviceId = Math.floor(10000 + Math.random() * 90000).toString();
-        localStorage.setItem('erp_device_id', deviceId);
-    }
-
-    let expectedKey = (parseInt(deviceId) * SECRET_MULTIPLIER) + SECRET_ADDITION;
-
-    if (savedKey && parseInt(savedKey) === expectedKey) {
-        document.getElementById('licenseScreen').style.display = 'none';
-        document.body.style.overflow = 'auto';
-    } else {
-        document.getElementById('licenseScreen').style.display = 'flex';
-        document.getElementById('deviceIdDisplay').innerText = deviceId;
-        document.body.style.overflow = 'hidden';
-    }
-}
-
-function checkLicense() {
-    let input = document.getElementById('licenseInput').value.trim();
-    let deviceId = localStorage.getItem('erp_device_id');
-    let expectedKey = (parseInt(deviceId) * SECRET_MULTIPLIER) + SECRET_ADDITION;
-
-    if (parseInt(input) === expectedKey) {
-        localStorage.setItem('erp_license_key', input);
-        alert("ACTIVATION SUCCESSFUL! WELCOME.");
-        document.getElementById('licenseScreen').style.display = 'none';
-        document.body.style.overflow = 'auto';
-    } else {
-        alert("❌ INVALID LICENSE KEY! Contact Admin.");
-    }
-}
-
-initLicense();
+// Purani license/device activation ke leftovers (agar koi ho) saaf kar do.
+try { localStorage.removeItem('erp_license_key'); localStorage.removeItem('erp_device_id'); } catch(e) {}
 
 function safeLSGet(key) { try { return localStorage.getItem(key); } catch(e) { return null; } }
 function safeLSSet(key, val) { try { localStorage.setItem(key, val); } catch(e) {} }
