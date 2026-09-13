@@ -3,3 +3,10 @@ npm-debug.log
 .DS_Store
 .env
 *.log
+
+# Electron build output (installers) — locally build hota hai, repo mein nahi jaata
+dist-installer/
+
+# electron / native build caches
+.cache/
+electron-cache/

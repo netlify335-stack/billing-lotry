@@ -1,3 +1,38 @@
+# Chandra Agency ERP — Billing System (V11 — OFFLINE WINDOWS DESKTOP APP + WEB)
+
+**V11 (Desktop):** ab yeh app **Windows desktop application** ke roop mein bhi
+chalti hai — **100% OFFLINE** (koi internet zaroorat nahi), data **hard disk ki
+SQLite database file** mein (**koi storage limit nahi**), aur **one-click
+installer** (`ChandraERP-Setup-*.exe`) ke saath. Poori guide: **[DESKTOP.md](DESKTOP.md)**
+
+```bash
+# Desktop app (source se):
+npm install
+npm run desktop        # app window khulti hai
+
+# Windows installer banayein (Windows machine par):
+npm run dist           # -> dist-installer\ChandraERP-Setup-11.0.0.exe
+
+# Tests (browser + desktop + real SQLite):
+npm test               # 45 tests
+```
+
+* **Framework:** Electron + better-sqlite3 — renderer wahi Chromium hai jo web
+  app chalata hai, isliye UI/features **pixel-perfect same**; SQLite main process
+  mein synchronous API deta hai jo Store engine ke durable-write model se exact
+  match karta hai. (Tauri chhoda kyunki usko Rust toolchain + WebView2 chahiye
+  hota aur rendering engine Windows-version ke saath badal jaata hai.)
+* **Offline:** pdf.js ab `vendor/` mein local bundled hai (pehle CDN); main
+  process saari http/https requests network-level par block karta hai.
+* **Data:** `%APPDATA%\ChandraERP\chandra-erp.db` (WAL + synchronous=FULL —
+  crash/reboot safe; uninstall par bhi data safe rehta hai).
+* **Web version bilkul pehle jaisa:** `npm start` / Vercel / Railway deploy
+  unchanged — browser mein app IndexedDB use karti rehti hai.
+
+---
+
+# (V10 notes — web version)
+
 # Chandra Agency ERP — Billing System (V10 — Company Fix + Bilkul Unlimited Local Storage)
 
 Single-file billing/ERP app jo **Railway aur Vercel dono pe deploy** ho jaati hai,

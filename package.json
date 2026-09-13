@@ -1,19 +1,71 @@
 {
   "name": "chandra-erp-billing",
-  "version": "10.0.0",
+  "version": "11.0.0",
   "private": true,
-  "description": "Chandra Agency ERP - Billing system (static app, unlimited local storage, zero runtime dependencies)",
-  "main": "server.js",
+  "description": "Chandra Agency ERP - Billing system. Windows OFFLINE desktop app (Electron + SQLite, unlimited hard-disk storage) + static web app (IndexedDB). Zero internet dependency.",
+  "main": "desktop/main.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test tests/app.test.mjs"
+    "desktop": "electron .",
+    "rebuild": "electron-builder install-app-deps",
+    "dist": "electron-builder --win",
+    "dist:dir": "electron-builder --win --dir",
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "postinstall": "electron-builder install-app-deps || echo chandra-erp: desktop native rebuild skipped - web-only install"
   },
   "engines": {
-    "node": ">=16"
+    "node": ">=18"
+  },
+  "dependencies": {
+    "better-sqlite3": "12.11.1"
   },
   "devDependencies": {
+    "electron": "^42.11.3",
+    "electron-builder": "^26.15.3",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^30.0.1"
+  },
+  "build": {
+    "appId": "com.chandraagency.erp.billing",
+    "productName": "Chandra ERP Billing",
+    "copyright": "Copyright (c) Prop. Amit Chandra",
+    "directories": {
+      "output": "dist-installer",
+      "buildResources": "build"
+    },
+    "files": [
+      "index.html",
+      "vendor/**/*",
+      "desktop/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "ChandraERP-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Chandra ERP Billing",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    }
   },
   "license": "UNLICENSED"
 }

@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <title>Ultimate ERP Dashboard - Prop. Amit Chandra</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <!-- pdf.js 2.16.105 — LOCAL vendor copy (pehle CDN se load hoti thi).
+         Ab app 100% OFFLINE chalti hai: koi internet request nahi. -->
+    <script src="vendor/pdf.min.js"></script>
     <style>
         :root { --primary: #1a2a6c; --accent: #27ae60; --bg: #f0f2f5; --danger: #c0392b; --dark: #2c3e50; --warning: #f39c12; --light: #ecf0f1; --panel-bg: #ffffff; --border: #e0e0e0; --text: #333333; }
         
@@ -330,16 +332,18 @@
 
 // ===== STORE-BEGIN =====
 // ---------------------------------------------------------------------------
-// STORE ENGINE V10 — UNLIMITED LOCAL STORAGE (IndexedDB)
-//  * App ki taraf se KOI SIZE LIMIT NAHI hai. Data aapke hi device ke browser
-//    database (IndexedDB) mein jaata hai — jitni jagah disk par khaali hai,
-//    utna data save hota rahega (GBs tak, koi 2GB/10MB wall nahi).
-//  * "Persistent storage" maanga jaata hai taaki browser data khud na delete kare.
-//  * Important writes DURABLE hain: company add/switch aur restore tab hi
-//    successful maane jaate hain jab IndexedDB transaction commit ho jaaye
-//    (pehle reload se pehle write commit nahi hota tha — data kho jaata tha).
-//  * Kabhi bhi quota/write error aaye to data PHENKA nahi jaata:
-//    auto-compaction + retry, aur user ko clearly bataya jaata hai.
+// STORE ENGINE V11 — UNLIMITED LOCAL STORAGE
+//   (DESKTOP APP: SQLite hard-disk DB  |  BROWSER: IndexedDB)
+//  * DESKTOP (Electron) mode: preload window.desktopAPI inject karta hai —
+//    poora data seedha hard disk ki SQLite file mein jaata hai
+//    (%APPDATA%\ChandraERP\chandra-erp.db). NA koi browser quota, NA auto-delete.
+//  * BROWSER mode: pehle jaisa IndexedDB (ChandraERP_DB > 'kv') — web deploy
+//    aur tests bina kisi change ke chalte rehte hain.
+//  * Dono backends par API ek hi hai: in-memory mirror (sync reads) + queued
+//    writes + durable commit (write + read-back VERIFY). Company add/switch
+//    aur restore tab hi successful maane jaate hain jab commit verify ho.
+//  * Kabhi bhi write error aaye to data PHENKA nahi jaata: auto-retry,
+//    auto-compaction, aur user ko clearly bataya jaata hai.
 // ---------------------------------------------------------------------------
 const Store = (function() {
     const DB_NAME = 'ChandraERP_DB';
@@ -347,12 +351,17 @@ const Store = (function() {
     const FLUSH_MS = 250;
     const MAX_RETRY = 6;
 
+    // DESKTOP APP detection: Electron preload ne SQLite bridge diya hai?
+    // (browser/jsdom tests mein yeh null rehta hai -> IndexedDB path)
+    const DESKTOP = (typeof window !== 'undefined' && window.desktopAPI && window.desktopAPI.db)
+        ? window.desktopAPI.db : null;
+
     let db = null;
     let mem = new Map();          // in-memory mirror (sync reads ka source)
     let pending = new Map();      // queued writes (key -> value | null=delete)
     let flushTimer = null;
     let flushing = null;          // in-flight flush promise
-    let mode = 'init';            // 'idb' | 'ls' | 'init'
+    let mode = 'init';            // 'sqlite' | 'idb' | 'ls' | 'init'
     let persisted = false;
     let failedWrites = 0;
     let writeCount = 0;
@@ -362,10 +371,16 @@ const Store = (function() {
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const isQuotaError = (e) => !!e && (e.name === 'QuotaExceededError' ||
         /quota|storage.*(full|exceed)|too large/i.test(String(e.name || '') + ' ' + String(e.message || '')));
+    // Async backend: writes queue + flush + verify hote hain (sqlite/idb).
+    // 'ls' fallback mein writes synchronous hote hain.
+    const asyncBackend = () => (mode === 'sqlite' || mode === 'idb');
 
     // Persistent storage maangte hain — isse browser data automatically delete
     // nahi karta aur quota disk ke hisaab se (GBs mein) milta hai.
+    // DESKTOP (sqlite) mode: data PEHLE se permanent hai (hard-disk file) —
+    // browser jaisi koi permission maangne ki zaroorat hi nahi.
     async function requestPersistence() {
+        if (mode === 'sqlite') { persisted = true; return true; }
         try {
             if (typeof navigator === 'undefined' || !navigator.storage || !navigator.storage.persist) return persisted;
             if (navigator.storage.persisted && await navigator.storage.persisted()) { persisted = true; return true; }
@@ -441,6 +456,27 @@ const Store = (function() {
         });
     }
 
+    // ---- SQLITE (DESKTOP APP) BRIDGE --------------------------------------
+    // IPC calls Promise-returning hain; idbWrite/idbGet jaisa hi shape,
+    // isliye flush/verify logic bilkul same rehta hai.
+    function sqliteWrite(entries) {
+        return Promise.resolve(DESKTOP.writeBatch(entries));
+    }
+    function sqliteGet(key) {
+        return Promise.resolve(DESKTOP.get(key)).then(v => (v === undefined ? null : v));
+    }
+
+    // Active backend par entries likho (ek transaction / ek IDB tx mein).
+    function backendWrite(entries) {
+        if (mode === 'sqlite') return sqliteWrite(entries);
+        return idbWrite(db, entries);
+    }
+    // Active backend se ek key padho (commit verify ke liye).
+    function backendGet(key) {
+        if (mode === 'sqlite') return sqliteGet(key);
+        return idbGet(db, key);
+    }
+
     function warnOnce(msg) {
         if (warned) return;
         warned = true;
@@ -472,7 +508,7 @@ const Store = (function() {
     }
 
     function scheduleFlush(ms) {
-        if (mode !== 'idb') return;
+        if (!asyncBackend()) return;
         if (flushTimer) clearTimeout(flushTimer);
         flushTimer = setTimeout(() => { flush(); }, ms || FLUSH_MS);
     }
@@ -485,7 +521,7 @@ const Store = (function() {
                 let entries = Array.from(pending.entries());
                 pending.clear();
                 try {
-                    await idbWrite(db, entries);
+                    await backendWrite(entries);
                     writeCount++;
                     failedWrites = 0;
                     lastError = null;
@@ -508,7 +544,7 @@ const Store = (function() {
     }
 
     function flush() {
-        if (mode !== 'idb' || !db) {
+        if (!asyncBackend() || (mode === 'idb' && !db)) {
             // localStorage fallback mode mein writes pehle hi sync ho chuke hote hain
             pending.clear();
             return Promise.resolve(true);
@@ -523,23 +559,23 @@ const Store = (function() {
     function setKey(key, val) {
         let s = String(val);
         mem.set(key, s);
-        if (mode === 'idb') { pending.set(key, s); scheduleFlush(); }
+        if (asyncBackend()) { pending.set(key, s); scheduleFlush(); }
         else { try { localStorage.setItem(key, s); } catch(e) { failedWrites++; lastError = String(e.message || e); warnOnce(); } }
     }
 
     function removeKey(key) {
         mem.delete(key);
-        if (mode === 'idb') { pending.set(key, null); scheduleFlush(); }
+        if (asyncBackend()) { pending.set(key, null); scheduleFlush(); }
         else { try { localStorage.removeItem(key); } catch(e) {} }
     }
 
     // Kya yeh keys sach mein database mein commit ho gayi hain?
     async function verifyKeys(keys) {
-        if (mode !== 'idb' || !db) return true;
+        if (!asyncBackend() || (mode === 'idb' && !db)) return true;
         try {
             for (let i = 0; i < keys.length; i++) {
                 let k = keys[i];
-                let v = await idbGet(db, k);
+                let v = await backendGet(k);
                 let stored = (v === null || v === undefined) ? null : String(v);
                 let wanted = mem.has(k) ? mem.get(k) : null;
                 if (stored !== wanted) return false;
@@ -585,6 +621,21 @@ const Store = (function() {
     }
 
     async function init() {
+        // 1) DESKTOP APP (Electron): SQLite hard-disk database.
+        //    Koi quota nahi, koi auto-delete nahi — permanent by design.
+        if (DESKTOP) {
+            try {
+                let rows = await DESKTOP.loadAll();
+                (rows || []).forEach(([k, v]) => mem.set(k, v));
+                mode = 'sqlite';
+                persisted = true;
+                migrateLegacy();   // file:// localStorage se bacha-khucha data (harmless)
+                return mode;
+            } catch(e) {
+                console.warn('Store: SQLite desktop backend fail — IndexedDB try kar rahe hain.', e);
+            }
+        }
+        // 2) BROWSER: IndexedDB (web deploy / tests)
         try {
             db = await openDB();
             let rows = await idbLoadAll(db);
@@ -593,6 +644,7 @@ const Store = (function() {
             migrateLegacy();
             requestPersistence();
         } catch(e) {
+            // 3) LAST FALLBACK: localStorage
             mode = 'ls';
             try {
                 for (let i = 0; i < localStorage.length; i++) {
@@ -625,8 +677,26 @@ const Store = (function() {
         get size() { return mem.size; },
         bytes() { let t = 0; mem.forEach((v, k) => { t += k.length + (v ? String(v).length : 0); }); return t * 2; },
         async estimate() {
+            // DESKTOP: disk ki free space + DB file size (SQLite ke paas koi
+            // artificial quota hota hi nahi — number sirf information hai).
+            try { if (DESKTOP && DESKTOP.diskInfo) { let di = await DESKTOP.diskInfo(); if (di) return di; } } catch(e) {}
             try { if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) return await navigator.storage.estimate(); } catch(e) {}
             return null;
+        },
+        // UI labels — engine ke hisaab se (sqlite desktop / idb browser / ls fallback)
+        engineLabel() {
+            if (mode === 'sqlite') return 'SQLITE (UNLIMITED — HARD DISK DATABASE)';
+            if (mode === 'idb') return 'INDEXEDDB (UNLIMITED LOCAL)';
+            return 'LOCALSTORAGE FALLBACK';
+        },
+        engineShort() {
+            if (mode === 'sqlite') return 'SQLITE (LOCAL DISK)';
+            if (mode === 'idb') return 'INDEXEDDB';
+            return 'LOCALSTORAGE';
+        },
+        dbFilePath() {
+            try { if (DESKTOP && DESKTOP.dbPath) return DESKTOP.dbPath(); } catch(e) {}
+            return Promise.resolve(null);
         },
         // Backup restore: poori data set likho aur commit confirm karo
         async importAll(obj) {
@@ -655,6 +725,13 @@ const Store = (function() {
 window.addEventListener('pagehide', () => { try { Store.flush(); } catch(e) {} });
 window.addEventListener('beforeunload', () => { try { Store.flush(); } catch(e) {} });
 window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { try { Store.flush(); } catch(e) {} } });
+
+// DESKTOP APP (Electron): window band hone se pehle main process signal bhejta
+// hai — pending SQLite writes flush + confirm hone ke BAAD hi window band hoti
+// hai. Browser/jsdom mein desktopAPI nahi hota, yeh code kuch nahi karta.
+if (typeof window !== 'undefined' && window.desktopAPI && window.desktopAPI.onBeforeClose) {
+    try { window.desktopAPI.onBeforeClose(() => Store.flush()); } catch(e) {}
+}
 // ===== STORE-END =====
 
 function safeLSGet(key) { try { return Store.get(key); } catch(e) { return null; } }
@@ -964,7 +1041,7 @@ function renderCompanyManager(c) {
     <div class="verification-block" style="display:flex; gap:15px; flex-wrap:wrap; align-items:center;">
         <div><b>TOTAL COMPANIES:</b> ${companyList.length}</div>
         <div><b>ACTIVE:</b> <span style="color:var(--accent);">${escapeHtml(activeCompany)}</span></div>
-        <div><b>ENGINE:</b> ${Store.mode === 'idb' ? 'INDEXEDDB (UNLIMITED LOCAL)' : 'LOCALSTORAGE FALLBACK'}</div>
+        <div><b>ENGINE:</b> ${Store.engineLabel()}</div>
     </div>
     <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin:15px 0;">
         <div style="flex:1; min-width:220px;">
@@ -979,7 +1056,7 @@ function renderCompanyManager(c) {
     </table>
     <p style="font-size:12px; color:#888; margin-top:12px;">
         Har company ka data alag-alag save hota hai (parties, entries, rates, results).
-        Add/switch/rename/delete turant IndexedDB mein commit + verify hota hai — page refresh ke baad bhi wahi rahega.
+        Add/switch/rename/delete turant local database (${Store.engineShort()}) mein commit + verify hota hai — refresh/restart ke baad bhi wahi rahega.
     </p>`;
 }
 
@@ -1910,7 +1987,8 @@ async function extractPDF() {
     }
 
     if(typeof pdfjsLib === 'undefined') {
-        alert("PDF library failed to load. Please check your internet connection.");
+        // Library ab LOCAL vendor/ folder se aati hai — internet se koi lena-dena nahi.
+        alert("PDF library load nahi hui. App band karke dobara kholein (internet ki zaroorat nahi — library app ke saath aati hai).");
         return;
     }
 
@@ -2071,7 +2149,7 @@ function renderBackupSync(c) {
     <div class="verification-block" style="margin-bottom:15px;">
         <b>CURRENT DATA:</b> ${fmtBytes(Store.bytes())} &nbsp;|&nbsp; <b>KEYS:</b> ${Store.allKeys().length} &nbsp;|&nbsp;
         <b>COMPANIES:</b> ${companyList.length} (${companyList.map(escapeHtml).join(', ') || '—'}) &nbsp;|&nbsp;
-        <b>ENGINE:</b> ${Store.mode === 'idb' ? 'INDEXEDDB' : 'LOCALSTORAGE'}
+        <b>ENGINE:</b> ${Store.engineShort()}
     </div>
     <div style="display:flex; gap:20px; margin-top:20px; flex-wrap:wrap;">
         <div style="flex:1; min-width:280px; border:1px solid var(--border); padding:20px; border-radius:4px; text-align:center; background:rgba(52, 152, 219, 0.05);">
@@ -3065,7 +3143,10 @@ function renderStorageStatus(c) {
     let companies = companyList.length;
 
     let engineBadge, engineNote;
-    if (Store.mode === 'idb' && Store.persisted) {
+    if (Store.mode === 'sqlite') {
+        engineBadge = '<span style="background:var(--accent); color:white; padding:5px 14px; border-radius:20px; font-size:12px; font-weight:bold;">SQLITE ✓ UNLIMITED + PERMANENT (HARD DISK DATABASE)</span>';
+        engineNote = 'Data aapke computer ki hard disk par ek database file mein save hai — app band, crash ya computer restart hone par bhi sab safe rehta hai. Browser ki koi limit yahan lagu nahi.';
+    } else if (Store.mode === 'idb' && Store.persisted) {
         engineBadge = '<span style="background:var(--accent); color:white; padding:5px 14px; border-radius:20px; font-size:12px; font-weight:bold;">INDEXEDDB ✓ UNLIMITED + PERMANENT (AUTO-DELETE OFF)</span>';
         engineNote = 'Browser is data ko kabhi khud delete nahi karega.';
     } else if (Store.mode === 'idb') {
@@ -3086,9 +3167,11 @@ function renderStorageStatus(c) {
     <div class="panel" style="border-left:4px solid var(--accent); background:rgba(46, 204, 113, 0.08);">
         <div style="font-size:15px; font-weight:bold; text-transform:uppercase; margin-bottom:6px;">♾️ IS APP KI KOI STORAGE LIMIT NAHI HAI</div>
         <p style="font-size:13px; margin:0; line-height:1.6;">
-            Poora data <b>aapke hi device</b> ke browser database (IndexedDB) mein save hota hai — server par kuch nahi jaata.
+            ${Store.mode === 'sqlite'
+                ? 'Poora data <b>aapke hi computer ki hard disk</b> par SQLite database file mein save hota hai — na internet chahiye, na server par kuch jaata hai.'
+                : 'Poora data <b>aapke hi device</b> ke browser database (IndexedDB) mein save hota hai — server par kuch nahi jaata.'}
             App par <b>na 2GB ki limit hai, na 10MB ki</b>: jitni jagah aapki disk par khaali hai, utna data save hota rahega.
-            Neeche jo number dikhta hai wo <b>browser ka estimate</b> hai (device ki free space), app ki limit nahi —
+            Neeche jo number dikhta hai wo <b>${Store.mode === 'sqlite' ? 'disk ka estimate' : 'browser ka estimate'}</b> hai (device ki free space), app ki limit nahi —
             app us number par kabhi band ya block nahi hoti.
         </p>
     </div>
@@ -3106,7 +3189,7 @@ function renderStorageStatus(c) {
 
     <div style="background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:15px; margin:15px 0;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px;">
-            <b style="text-transform:uppercase; font-size:13px;">AAPKE DEVICE KI STORAGE (browser estimate)</b>
+            <b style="text-transform:uppercase; font-size:13px;">AAPKE DEVICE KI STORAGE (${Store.mode === 'sqlite' ? 'disk estimate' : 'browser estimate'})</b>
             <span style="font-size:11px; color:#888;">yeh limit nahi hai — sirf free space ka andaaza</span>
         </div>
         <div style="background:var(--border); border-radius:20px; height:22px; margin-top:8px; overflow:hidden;">
@@ -3150,7 +3233,9 @@ async function enablePermanentStorage() {
     if (msg) {
         msg.style.color = ok ? 'var(--accent)' : 'var(--warning)';
         msg.innerText = ok
-            ? '✓ PERMANENT STORAGE ON — ab browser yeh data khud delete nahi karega.'
+            ? (Store.mode === 'sqlite'
+                ? '✓ PERMANENT STORAGE ON — desktop app ka data hard disk ki database file mein hai; yeh kabhi auto-delete NAHI hota.'
+                : '✓ PERMANENT STORAGE ON — ab browser yeh data khud delete nahi karega.')
             : 'Browser ne abhi permission nahi di. Koi baat nahi — data save hota rahega, bas browser kabhi-kabhi khud safai kar sakta hai. (Chrome/Edge mein website ke address bar waale icon se "Site data" allow karein.)';
     }
     let area = document.getElementById('toolContentArea');
@@ -3190,14 +3275,14 @@ async function fillQuotaBar() {
         bar.style.background = 'var(--accent)';
         txt.innerHTML =
             `Is app ka data: <b style="color:var(--accent);">${fmtBytes(appBytes)}</b> &nbsp;|&nbsp; ` +
-            `Browser ko mili jagah: <b>${fmtBytes(est.quota)}</b> &nbsp;|&nbsp; ` +
+            `Device par upalabdh jagah: <b>${fmtBytes(est.quota)}</b> &nbsp;|&nbsp; ` +
             `Khaali: <b>${fmtBytes(Math.max(0, est.quota - est.usage))}</b><br>` +
             `<span style="font-size:11px;">Yeh jagah aapki disk free hone par apne aap badhti rehti hai. App is par kabhi block nahi hoti.</span>`;
     } else {
         bar.style.width = '100%';
         bar.style.background = 'var(--accent)';
         txt.innerHTML = `Is app ka data: <b style="color:var(--accent);">${fmtBytes(appBytes)}</b> &nbsp;|&nbsp; ` +
-            `<span style="font-size:11px;">Browser quota info nahi de raha — matlab koi fixed limit lagu nahi. Data device ki free space tak save hota rahega.</span>`;
+            `<span style="font-size:11px;">Quota info nahi mil raha — matlab koi fixed limit lagu nahi. Data device ki free space tak save hota rahega.</span>`;
     }
 }
 
