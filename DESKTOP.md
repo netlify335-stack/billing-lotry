@@ -120,6 +120,19 @@ dist-installer\ChandraERP-Setup-11.0.0.exe
 * Uninstall: Settings → Apps → "Chandra ERP Billing" (data `%APPDATA%\ChandraERP`
   mein safe rehta hai).
 
+### Anpadh / non-technical user ko screen par kya dikhta hai
+1. `ChandraERP-Setup-11.0.0.exe` par **double-click** (double-tap).
+2. Ek chhoti window khulti hai — bas progress bar chalta hai ("Installing...").
+   Na koi folder chunna, na koi license page, na koi button dabana.
+3. Progress khatam → **app KHUD khul jaati hai** — seedha dashboard
+   (koi login/password nahi). Desktop par icon aa chuka hota hai.
+4. Agle din se: desktop icon par double-click → app khuli. Bas.
+   (Internet kabhi nahi chahiye.)
+
+> Agar Windows **SmartScreen** ki neeli warning dikhe (naya/unsigned app hone
+> par): "More info" → "Run anyway" ek baar click karna hota hai. Code-signing
+> certificate lagwane ke baad yeh warning bhi nahi aayegi.
+
 ### Installer ko doosre computers par dena
 `ChandraERP-Setup-11.0.0.exe` ko USB/WhatsApp se kisi bhi Windows 10/11
 (64-bit) machine par copy karein — **bina internet ke** install + run hoti hai.

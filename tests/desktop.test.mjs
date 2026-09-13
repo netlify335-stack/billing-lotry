@@ -354,10 +354,16 @@ test('PACKAGING: package.json mein one-click Windows installer config hai', asyn
     assert.equal(b.productName, 'Chandra ERP Billing');
     assert.ok(b.win.target.some(t => t.target === 'nsis'), 'NSIS installer target');
     assert.equal(b.nsis.oneClick, true, 'one-click install (non-technical users)');
+    assert.equal(b.nsis.perMachine, false, 'per-user install — admin rights nahi chahiye');
+    assert.equal(b.nsis.allowToChangeInstallationDirectory, false,
+        'anpadh user ko folder chunne ka page NAHI dikhe');
+    assert.equal(b.nsis.allowElevation, true, 'zaroorat pade to installer khud elevation le le');
     assert.equal(b.nsis.createDesktopShortcut, true, 'desktop shortcut');
     assert.equal(b.nsis.createStartMenuShortcut, true, 'start menu entry');
     assert.equal(b.nsis.runAfterFinish, true, 'install ke baad app khud khule');
     assert.equal(b.nsis.deleteAppDataOnUninstall, false, 'uninstall par user data safe rahe');
+    assert.match(b.win.artifactName, /ChandraERP-Setup/, 'installer ka naam saaf ho');
+    assert.ok(fs.existsSync(path.join(ROOT, b.win.icon)), 'installer icon maujood ho');
     assert.ok(b.files.includes('index.html'), 'app files packaged');
     assert.ok(b.files.some(f => f.startsWith('vendor/')), 'local pdf.js packaged');
     assert.ok(b.files.some(f => f.startsWith('desktop/')), 'desktop layer packaged');
