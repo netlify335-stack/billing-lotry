@@ -1,0 +1,56 @@
+# =====================================================================
+# Chandra ERP Billing — Windows one-click installer cloud build
+# ---------------------------------------------------------------------
+# Is branch par push hote hi GitHub ka FREE Windows runner:
+#   1. dependencies install karta hai (better-sqlite3 prebuilt binary samet)
+#   2. `npm run dist` se NSIS one-click installer banata hai
+#   3. .exe ko run ke ARTIFACT mein upload kar deta hai
+# Artifact download karke GitHub Release par daal diya jaata hai —
+# wahi permanent public download link banti hai.
+# =====================================================================
+name: Build Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a09b97-billing-lotry]
+    paths:
+      - 'index.html'
+      - 'Chandra_bill - Copy.html'
+      - 'vendor/**'
+      - 'desktop/**'
+      - 'build/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (Electron + better-sqlite3 native rebuild)
+        run: npm ci
+
+      - name: Build one-click Windows installer (NSIS)
+        run: npm run dist
+
+      - name: Upload installer .exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChandraERP-Setup
+          path: dist-installer/*.exe
+          if-no-files-found: error
+          retention-days: 30
