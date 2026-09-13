@@ -1,0 +1,81 @@
+{
+  "name": "chandra-erp-billing-desktop",
+  "productName": "Chandra ERP Billing",
+  "version": "10.0.0",
+  "private": true,
+  "description": "Chandra Agency ERP Billing — 100% offline Windows desktop app (unlimited local IndexedDB storage)",
+  "author": "Amit Chandra",
+  "license": "UNLICENSED",
+  "main": "electron/loader.js",
+  "scripts": {
+    "build:renderer": "node scripts/build-renderer.mjs",
+    "compile": "node scripts/compile-main.mjs",
+    "smoke": "cross-env CHANDRA_SMOKE=1 electron .",
+    "dev": "cross-env CHANDRA_DEV=1 electron .",
+    "start": "electron .",
+    "test:renderer": "node test/obfuscated.test.mjs",
+    "dist:win": "npm run build:renderer && npm run compile && electron-builder --win --x64",
+    "dist:win:dir": "npm run build:renderer && npm run compile && electron-builder --win --x64 --dir"
+  },
+  "dependencies": {
+    "bytenode": "^1.6.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "44.3.0",
+    "electron-builder": "^26.15.3",
+    "fake-indexeddb": "^6.2.5",
+    "javascript-obfuscator": "^5.7.0",
+    "jsdom": "^30.0.1",
+    "pdfjs-dist": "2.16.105"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "build": {
+    "appId": "com.chandra.erp.billing",
+    "productName": "Chandra ERP Billing",
+    "copyright": "Copyright © 2026 Amit Chandra",
+    "directories": {
+      "output": "../release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "app/**/*",
+      "build/icon.ico",
+      "package.json",
+      "!electron/src/**/*",
+      "!**/*.map",
+      "!**/*.bak"
+    ],
+    "asar": true,
+    "compression": "maximum",
+    "detectUpdateMode": "force",
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "menuCategory": "Chandra ERP",
+      "shortcutName": "Chandra ERP Billing",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "ChandraERPBilling-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "ChandraERPBilling-Portable-${version}.exe"
+    }
+  }
+}

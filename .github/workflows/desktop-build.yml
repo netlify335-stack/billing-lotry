@@ -1,0 +1,132 @@
+name: Desktop Windows Build
+
+on:
+  push:
+    branches: [arena/01a09aaa-billing-lotry]
+    paths:
+      - '.github/workflows/desktop-build.yml'
+      - 'desktop/**'
+      - 'index.html'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify-linux:
+    name: Tests + Electron smoke (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install web app dev deps + run web tests
+        run: |
+          npm ci
+          npm test
+
+      - name: Install desktop deps
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build protected renderer (offline + obfuscated)
+        working-directory: desktop
+        run: npm run build:renderer
+
+      - name: Test obfuscated renderer in fake browser + IndexedDB
+        working-directory: desktop
+        run: npm run test:renderer
+
+      - name: Compile main process to bytecode
+        working-directory: desktop
+        run: npm run compile
+
+      - name: Smoke test packaged-style Electron app
+        working-directory: desktop
+        env:
+          CHANDRA_SMOKE: '1'
+        run: |
+          which xvfb-run || (sudo apt-get update -qq && sudo apt-get install -y -qq xvfb)
+          xvfb-run -a npm run smoke
+
+  build-windows:
+    name: Build Windows installer + portable EXE
+    runs-on: windows-latest
+    needs: verify-linux
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install desktop deps
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build protected renderer
+        working-directory: desktop
+        run: npm run build:renderer
+
+      - name: Test obfuscated renderer
+        working-directory: desktop
+        run: npm run test:renderer
+
+      - name: Package Windows app (NSIS installer + portable)
+        working-directory: desktop
+        run: npm run dist:win
+
+      - name: Smoke test the PACKAGED Windows app
+        shell: pwsh
+        working-directory: desktop
+        run: |
+          $exe = "release\win-unpacked\Chandra ERP Billing.exe"
+          if (!(Test-Path $exe)) { throw "packaged exe not found: $exe" }
+          $p = Start-Process -FilePath $exe -ArgumentList '--smoke' -PassThru -Wait
+          Write-Host "packaged smoke exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "packaged app smoke test FAILED with code $($p.ExitCode)" }
+
+      - name: List + hash artifacts
+        shell: bash
+        run: |
+          ls -lh release/*.exe
+          sha256sum release/*.exe | tee release/SHA256SUMS.txt
+
+      - name: Upload to Actions artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChandraERP-Windows-x64
+          path: |
+            release/*.exe
+            release/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Chunk EXE files and push to branch
+        shell: bash
+        run: |
+          set -e
+          mkdir -p ".dist-ci/win-${GITHUB_RUN_ID}"
+          node desktop/scripts/artifact.mjs chunk ".dist-ci/win-${GITHUB_RUN_ID}" \
+            release/ChandraERPBilling-Setup-10.0.0.exe \
+            release/ChandraERPBilling-Portable-10.0.0.exe
+          cp release/SHA256SUMS.txt ".dist-ci/win-${GITHUB_RUN_ID}/"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f ".dist-ci"
+          git commit -m "chore(ci): windows desktop app artifacts run ${GITHUB_RUN_ID} [skip ci]"
+          git push

@@ -3,3 +3,11 @@ npm-debug.log
 .DS_Store
 .env
 *.log
+
+# Desktop app build outputs / generated files
+release/
+desktop/release/
+desktop/app/
+desktop/electron/main.jsc
+.dist-ci/
+dist-out/
