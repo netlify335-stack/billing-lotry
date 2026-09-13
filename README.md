@@ -1,97 +1,100 @@
-# Chandra Agency ERP — Billing System (V9.7 — No Login, Unlimited Local Storage)
+# Chandra Agency ERP — Billing System (V10 — Company Fix + Bilkul Unlimited Local Storage)
 
-Single-file billing/ERP app jo ab **Railway aur Vercel dono pe deploy** ho jaata hai,
-**storage-full crash** se fix hai, aur **koi login / device activation / license key nahi**
-maangta — app seedha khulti hai.
+Single-file billing/ERP app jo **Railway aur Vercel dono pe deploy** ho jaati hai,
+**koi login / device activation / license key nahi** maangti, aur poora data
+**aapke hi device** mein (IndexedDB) rakhti hai — **kisi size limit ke bina**.
 
-## 🔓 V9.7 — Security / Login / Device Code poori tarah hata diya gaya
-- Purana **"SOFTWARE ACTIVATION REQUIRED"** screen (Device ID + License Key, jo alag device
-  pe generate hota tha) **completely remove** kar diya gaya — dono `index.html` aur
-  `Chandra_bill - Copy.html` se.
-- Koi password/PIN/key nahi, koi device lock nahi — **app khulte hi seedha dashboard**.
-- Purani saved license/device keys startup pe automatically delete ho jaati hain.
-- Saara data pehle ki tarah **100% local** (aapke browser ke andar) hi rehta hai — server pe
-  kuch nahi jaata.
+---
 
-### 🐛 Bug fix (V9.7)
-- **Multi-line / range paste crash fix**: grid mein ek saath kai numbers (jaise
-  `41950-41960` waali ranges) paste karne par ek JavaScript error (`firstLine.join is not a
-  function`) aata tha — ab fix hai, paste theek se kaam karta hai.
+## 🔧 V10 — is version mein theek hui cheezein
 
-### 💾 Storage ki limit — seedha jawaab
-- App **IndexedDB** use karti hai — **localStorage jaisi 5–10MB ki limit NAHI hai**.
-  IndexedDB mein browser aapko **sainkdo MB / kai GB** tak data deta hai (practically aapki
-  hard disk jitni free ho). 50MB, 100MB ya GB bharne par app **band/block nahi hoti**.
-- Ab startup pe **Persistent Storage** ki permission bhi maangi jaati hai — isse browser
-  is data ko kabhi automatically delete nahi karta. (Tools → **STORAGE STATUS** mein engine
-  aur quota live dikhta hai.)
-- Sirf ek haalat mein 5–10MB fallback lagta hai: agar browser IndexedDB support na kare
-  (bahut purana browser / kuch private modes). Aam modern Chrome/Edge/Firefox/Safari mein
-  IndexedDB + unlimited-level storage chalta hai.
+### 1. ❌→✅ "Nayi company add nahi ho rahi thi" — FIX
+**Problem:** `ADD` dabane par company list memory mein to jud jaati thi, par turant
+`window.location.reload()` ho jaata tha. IndexedDB ka write **abhi commit bhi nahi hua
+hota tha**, isliye refresh ke baad nayi company **gayab** ho jaati thi. (Yahi cheez
+company **switch** ke saath bhi hoti thi — purani company wapas select ho jaati thi.)
 
+**Fix:**
+- Company add / switch / rename / delete ab **durable write** karte hain:
+  IndexedDB transaction **commit + read-back verify** hone ke baad hi reload hota hai.
+- Verify fail ho to saaf error dikhta hai aur company list **rollback** ho jaati hai
+  (UI aur storage kabhi aadhe-adhure match nahi karte).
+- Duplicate check ab **case-insensitive** hai (`chandra agency` = `Chandra Agency`),
+  naam trim/normalize hota hai, aur HTML todne waale characters hat jaate hain.
+- Naya **COMPANY MANAGER** (header ka `MANAGE` button ya Tools menu):
+  companies ki list, unke records ka count, **ADD / OPEN / RENAME / DELETE**.
+  - `RENAME` company ka poora data naye naam par migrate kar deta hai.
+  - `DELETE` company + uska data hata deta hai (last company delete nahi hoti).
+  - Naam type karne ka input bhi hai — jahan browser `prompt()` block karta hai
+    (kuch iframe/embedded situations), wahan bhi add ho jaayega.
 
-## 🔴 Purani problems (jo fix ho gayi)
+### 2. 💾 "2GB limit kyu dikha raha tha?" — ab koi limit nahi dikhti
+**Problem:** Tools > STORAGE STATUS mein likha aata tha
+`X MB used of 2048 MB available` — jo ek **hard limit** jaisa lagta tha.
+Wo number asal mein browser ka *estimate* hota hai (device ki free space ka),
+app ki limit nahi.
 
-### 1. Deploy fail kyu ho raha tha?
-- Repo mein sirf `Chandra_bill - Copy.html` tha — Railway ko **start command** chahiye aur
-  Vercel ko root pe **`index.html`** chahiye. Dono kuch nahi milta tha isliye error aata tha.
-- **Fix:** `index.html` + `server.js` (zero-dependency Node server) + `package.json` + `vercel.json` add kar diye.
+**Fix:**
+- App par **pehle bhi koi limit nahi thi aur ab bhi nahi hai** — poora data browser ke
+  **IndexedDB** mein jaata hai, jo aapki disk ki free space ke hisaab se **GBs** tak
+  jaata hai (5–10MB wala localStorage limit yahan lagu nahi).
+- Ab screen par saaf likha aata hai: **"IS APP KI KOI STORAGE LIMIT NAHI HAI"**, aur
+  browser ka number **"aapke device ki storage (estimate) — yeh limit nahi"** ke roop mein
+  dikhta hai. App us number par kabhi band/block nahi hoti.
+- **PERMANENT STORAGE ON** ka button: browser se persistent-storage permission maangta
+  hai, jisse data kabhi auto-delete nahi hota.
+- **WRITE HEALTH** indicator: kitne writes successful hue, koi fail hua to kya error aaya.
+- Write fail hone par data **phenka nahi jaata** — auto-retry, auto-compaction
+  (result files ki duplicate HTML copy hata kar) aur saaf warning.
+- **COMPACT DATA** button: purane result files ki extra HTML copy hata deta hai
+  (wo `resultData` se dobara ban jaati hai) — size lagbhag aadha.
 
-### 2. "10MB / 50MB resources ke baad band ho jaata hai" — yeh error kya hai?
-Yeh **browser ka localStorage quota limit** hai. Har website ko browser sirf **~5–10MB** storage
-deta hai. Aapka app har entry ko do baar save karta tha (bucket + raw format) aur result files
-ka poora HTML bhi isi mein jaata tha. Quota full hone par:
-- Kuch writes **chupchaap fail** ho jaate the ("SAVED" dikhta tha par data save nahi hota tha)
-- Kuch direct `localStorage` calls **crash** Maar dete the (blank screen / app band)
+### 3. 💾→✅ Backup / Restore — check kiya aur theek kiya
+**Jo bugs mile:**
+- Backup mein sirf `erp_` se shuru hone waali keys jaati thi — isliye **custom SEM list
+  (`sems` key) har backup se chhoot jaati thi** aur naye device par restore karne ke baad
+  SEM settings default `[3,5,10,15,20]` par chali jaati thi.
+- Purani localStorage → IndexedDB migration mein bhi wahi `sems` key chhoot jaati thi.
+- Galat/corrupt `.bak` file select karne par `RESTORE SUCCESSFUL` kehkar **poora data
+  delete** ho sakta tha (valid JSON, par ERP data nahi → sab kuch wipe).
 
-**Fix (V9.6):** Poora data ab **IndexedDB** mein jaata hai — same browser, par limit
-**100s of MB / GBs** (aapki disk jitni khane pe mil jaati hai). Purana data pehli baar
-khulte hi **automatically migrate** ho jaata hai, kuch delete nahi hota. Agar IndexedDB
-available na ho to app pehle jaise localStorage pe chalti rahegi (fallback mode).
+**Fix:**
+- Export ab **saari keys** leta hai (global `sems`, `erp_theme` samet) + wrapper metadata
+  (version, date, companies, key count). Purane (flat) backups bhi import ho jaate hain.
+- Migration ab global keys bhi IndexedDB mein le aati hai.
+- Restore se pehle file **parse + validate** hoti hai: corrupt/ galat/ khaali file par
+  kuch delete nahi hota, saaf error dikhta hai.
+- Restore ke baad **commit verify** hota hai, phir hi reload.
+- Do mode: **REPLACE ALL** (current data hata kar backup) aur **MERGE**
+  (backup ka data current data ke saath jodo — naya device + purana backup milaane ke liye).
+- Restore se pehle summary dikhti hai: file, size, keys, companies, export date.
 
-## ✅ Naya kya hai
-- **STORAGE STATUS** tool (Tools panel mein): kitna storage use hua, browser quota,
-  purani entries/results delete karke space free karne ke buttons.
-- Backup/restore ab bhi Tools > BACKUP & SYNC mein — ab naye engine ke saath.
-- Save tab-band hone se pehle automatically flush hota hai (data loss ka risk kam).
+---
 
-## 🚀 Deploy kaise karein
+## ✅ Test kaise karein
+Repo mein automated tests hain jo app ko **real browser-jaise environment (jsdom) + real
+IndexedDB** mein chalaate hain — app ka apna code, koi duplicate logic nahi:
 
-### Railway
-1. GitHub repo connect karo (New Project → Deploy from GitHub repo).
-2. Railway automatically Node detect karega aur `npm start` chalayega. **Koi build command set karne ki zarurat nahi.**
-3. Bas. App `PORT` environment variable pe auto chal jaata hai.
-
-### Vercel
-1. Import project from GitHub (framework preset: **Other** — auto detect ho jaata hai).
-2. Koi build command nahi, koi output directory nahi chahiye.
-3. Deploy. `vercel.json` pehle se configured hai.
-
-### Local test
 ```bash
-npm start
-# ya phir directly:
-node server.js
-# phir browser mein: http://localhost:3000
+npm install        # sirf dev-dependencies (jsdom, fake-indexeddb)
+npm test           # 20 tests: company add/switch/rename/delete, backup, restore,
+                   # corrupt file, merge, storage status, compact, purge, entry save
 ```
 
-Ya bina server ke bhi: `index.html` ko seedha browser mein kholo (file:// pe bhi chalega,
-localStorage fallback mode mein).
+## 🚀 Deploy / chalana
+```bash
+npm start          # http://localhost:3000
+```
+- **Railway / Render:** start command `npm start`
+- **Vercel:** root par `index.html` hai, `vercel.json` ready hai — kuch extra nahi karna.
+- Note: `index.html` aur `Chandra_bill - Copy.html` **identical** rakhe jaate hain
+  (test bhi yeh check karta hai), taaki kaun si bhi file kholein — same fixed app mile.
 
-## 📁 Files
-| File | Kaam |
-|---|---|
-| `index.html` | **Main app (V9.6 fixed)** — yahi deploy hota hai |
-| `Chandra_bill - Copy.html` | Purana original (reference ke liye rakha hai) |
-| `server.js` | Zero-dependency static server (Railway/Node hosts ke liye) |
-| `package.json` | Node start script (`npm start`) |
-| `vercel.json` | Vercel static deploy config |
+## 📦 Data kahan rehta hai?
+- 100% **aapke browser/device** mein — IndexedDB database `ChandraERP_DB`.
+- Server par kuch nahi jaata. Backup file aap khud download karte hain (`.bak`).
+- Har company ka data alag keys mein: `erp_<Company>_<date>_<session>_<party>_<type>_<sem>`.
+- Backup/restore: **Tools > BACKUP & RESTORE**. Storage info: **Tools > STORAGE STATUS**.
 
-## 💡 Aage kya add karna chahiye (suggestions)
-1. **Auto daily backup** — roz ka data automatic JSON file mein download/reminder.
-2. **WhatsApp share button** — bill/report seedha party ko WhatsApp pe bhejo.
-3. **Print/PDF bill** — browser print se proper invoice layout.
-4. **CSV/Excel export** — reports ko Excel mein kholne ke liye.
-5. **Cloud sync (Firebase/Supabase)** — do alag device pe same data (abhi data sirf ek browser mein rehta hai).
-7. **Monthly dashboard/chart** — kitna sale hua, kitna return, party-wise graph.
-8. **Purana data auto-archive** — 6 mahine+ purana data alag file mein — app fast rahega.
+## 🔓 Login / activation
+Koi password, PIN, device code ya license key nahi — app khulte hi seedha dashboard.

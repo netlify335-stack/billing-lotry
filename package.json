@@ -1,14 +1,19 @@
 {
   "name": "chandra-erp-billing",
-  "version": "1.0.0",
+  "version": "10.0.0",
   "private": true,
-  "description": "Chandra Agency ERP - Billing system (static app, zero dependencies)",
+  "description": "Chandra Agency ERP - Billing system (static app, unlimited local storage, zero runtime dependencies)",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test tests/app.test.mjs"
   },
   "engines": {
     "node": ">=16"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^30.0.1"
   },
   "license": "UNLICENSED"
 }
